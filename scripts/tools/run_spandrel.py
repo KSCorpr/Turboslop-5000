@@ -5,7 +5,11 @@ import gc
 import sys
 from pathlib import Path
 
+# Windows embeddable Python uses python._pth and omits the script directory.
+# Bootstrap both the project package and sibling runner helpers explicitly.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _device import pick_device
 from atelier.imaging.upscale import read_source, save_result, tiled_x4
 
 
@@ -19,7 +23,6 @@ def main():
     import torch
     import numpy as np
     from spandrel import ModelLoader, ImageModelDescriptor
-    from _device import pick_device
 
     device = pick_device(torch)
     model = ModelLoader().load_from_file(args.model)

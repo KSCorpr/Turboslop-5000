@@ -121,3 +121,25 @@ class NativeTests(unittest.TestCase):
         self.run.side_effect = bad
         with self.assertRaisesRegex(sdcpp.EngineError, 'expected'):
             generate.upscale_image(Image.new('RGB', (7, 5)), '4x.gguf')
+
+
+class PortableRunnerTests(unittest.TestCase):
+    def test_runner_imports_without_script_directory_on_sys_path(self):
+        # -I removes cwd/PYTHONPATH, reproducing the embedded Python path issue.
+        # run_path does not add the runner directory for a plain Python file.
+        import subprocess
+        import sys
+        runner = Path(__file__).resolve().parents[1] / "scripts/tools/run_spandrel.py"
+        code = (
+            "import runpy, sys; from pathlib import Path; "
+            "runner = Path(sys.argv[1]); "
+            "assert str(runner.parent) not in sys.path; "
+            "scope = runpy.run_path(str(runner)); "
+            "assert Path(scope['pick_device'].__code__.co_filename).resolve() "
+            "== runner.with_name('_device.py').resolve()"
+        )
+        with tempfile.TemporaryDirectory() as unrelated_cwd:
+            result = subprocess.run([sys.executable, "-I", "-c", code, str(runner)],
+                                    cwd=unrelated_cwd, capture_output=True, text=True,
+                                    timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

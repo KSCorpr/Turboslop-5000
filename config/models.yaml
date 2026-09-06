@@ -1,0 +1,204 @@
+# ============================================================================
+#  GEN.Ai Image Workshop — Bibliothèque de modèles
+# ----------------------------------------------------------------------------
+#  Source unique de vérité : téléchargement à la demande, recommandations selon
+#  le matériel, et réglages automatiques par modèle (steps/cfg/sampler/...).
+#
+#  Jokers dans `match` :
+#    {quant}     -> quantification du modèle de diffusion (selon VRAM)
+#    {enc_quant} -> quantification de l'encodeur de texte (selon RAM, en offload)
+#  Le téléchargeur interroge l'API Hugging Face et choisit le meilleur fichier.
+# ============================================================================
+
+base_models:
+
+  # --------------------------------------------------------------------------
+  - id: flux2-klein-9b
+    name: "Flux.2 Klein 9B"
+    family: flux2
+    tags: [qualité, rapide, distillé, édition]
+    description: >
+      FLUX.2 Klein 9B en GGUF (distillé, rapide : 4 pas, CFG 1.0). Diffusion Q4
+      ≈ 5 Go en VRAM ; encodeur **Qwen3-8B officiel** (dépôt Unsloth) déchargé en
+      RAM ; VAE flux2. Tourne dès 10–12 Go. **Text-to-image ET édition** :
+      fournissez une image de référence (jusqu'à 3) et décrivez la modification
+      dans le prompt.
+    sources:
+      diffusion:
+        # Dépôt CHANGÉ, même défaut que Krea 2 Turbo avant lui : l'ancien
+        # (leejet/FLUX.2-klein-9B-GGUF) ne publie QUE Q4_0 et Q8_0. Mesuré :
+        # quelle que soit la carte, le profil auto retombait sur Q4_0 (5,6 Go)
+        # — une 3060 12 Go qui demandait Q5_K_M comme une 4080 qui demandait
+        # Q6_K. Ici l'échelle va de Q2_K à Q8_0 et les tailles sont bien
+        # DISTINCTES (Q5_K_S 6,94 Go ≠ Q5_K_M 7,02 Go), donc le quant visé
+        # existe vraiment. Même base (black-forest-labs/FLUX.2-klein-9B) et
+        # mêmes noms de fichiers : le motif ci-dessous ne bouge pas, et les
+        # fichiers déjà téléchargés ne sont pas retouchés.
+        repo: unsloth/FLUX.2-klein-9B-GGUF
+        match: "*klein-9b*{quant}.gguf"
+        quantizable: true
+      vae:
+        # Ce dépôt a été RENOMMÉ en « vae-text-encorder-for-flux-klein-9b »,
+        # et l'ancien identifiant redirige. On garde volontairement l'ancien :
+        # le dossier local est dérivé du nom du dépôt (models/<owner>__<nom>),
+        # donc écrire le nom neuf ferait re-télécharger 336 Mo et laisserait un
+        # dossier orphelin, pour zéro gain. À corriger le jour où la redirection
+        # tombe — pas avant.
+        repo: Comfy-Org/flux2-klein-9B
+        match: "split_files/vae/flux2-vae.safetensors"
+      text_encoder:
+        # Encodeur Qwen3-8B officiel en GGUF (doc flux2.md). Ladder complet.
+        repo: unsloth/Qwen3-8B-GGUF
+        match: "Qwen3-8B-{enc_quant}.gguf"
+        quantizable: true
+    defaults:
+      steps: 4
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: auto     # doc sd.cpp : scheduler non forcé (défaut moteur)
+      width: 1024
+      height: 1024
+      supports_negative: false
+      edit: full          # modèle d'édition natif : UI « images de référence »
+    presets:
+      # Aligné sur docs/flux2.md : euler, cfg 1.0, 4 pas, scheduler = défaut moteur
+      # (la doc ne force jamais de scheduler). Variantes = plus de pas seulement.
+      - {name: "⚡ Recommandé (doc, 4 pas)", sampler: euler, scheduler: auto, steps: 4, cfg_scale: 1.0}
+      - {name: "Équilibré (6 pas)",          sampler: euler, scheduler: auto, steps: 6, cfg_scale: 1.0}
+      - {name: "Qualité (8 pas)",            sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0}
+    vram_min_gb: 10
+
+  # --------------------------------------------------------------------------
+  - id: krea2-turbo
+    name: "Krea 2 Turbo"
+    family: krea2
+    tags: [rapide, distillé, krea]
+    description: >
+      Krea 2 « Turbo » (distillé) en GGUF — variante rapide (8 pas, CFG 1.0) du
+      modèle Krea 2. Encodeur **Qwen3-VL-4B-Instruct officiel** (dépôt Qwen, via
+      --llm, déchargé en RAM) + VAE WAN 2.1. Photoréalisme. Le profil auto
+      choisit la diffusion selon la VRAM (**11 Go → Q4_K_M, 12 Go → Q5_K_M**)
+      et l'encodeur selon la RAM (**Q8_0** dès 32 Go). **Édition d'image
+      (Ostris Edit)** :
+      chargez une image, cochez « Mode édition » et installez le **LoRA
+      d'édition** (bouton 1 clic) — moteur sd.cpp récent requis
+      (update-engine.bat).
+    sources:
+      diffusion:
+        # Dépôt CHANGÉ pour son échelle de quants complète. L'ancien
+        # (realrebelai/KREA-2_GGUFs, dossier TURBO/) n'a ni Q5_K_M ni Q2_K :
+        # sur une carte de 12 Go, le profil auto demandait Q5_K_M et retombait
+        # sur Q5_K_S. Ici l'échelle va de Q2_K (4,9 Go) à Q8_0, donc le quant
+        # visé existe vraiment — et les petites cartes ont enfin une marche.
+        repo: vantagewithai/Krea-2-Turbo-GGUF
+        match: "krea2_turbo-{quant}.gguf"
+        quantizable: true
+      text_encoder:
+        # Encodeur officiel Qwen (doc krea2.md). Nom de fichier « Qwen3VL » sans
+        # tiret ; pas de « * » en tête pour ne PAS matcher les fichiers mmproj-*
+        # (le projecteur vision est un composant SÉPARÉ, ci-dessous).
+        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
+        match: "Qwen3VL-4B-Instruct-{enc_quant}.gguf"
+        quantizable: true
+      text_encoder_vision:
+        # Projecteur vision (mmproj) : permet à Qwen3-VL de « voir » l'image de
+        # référence en mode ÉDITION (Krea 2 Ostris Edit, sd.cpp --llm_vision).
+        # Optionnel : le text-to-image marche sans ; chargé seulement en édition.
+        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
+        match: "mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf"
+        optional: true
+      vae:
+        repo: Comfy-Org/Wan_2.1_ComfyUI_repackaged
+        match: "*wan_2.1_vae.safetensors"
+    defaults:
+      steps: 8
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: auto     # doc sd.cpp : scheduler non forcé (défaut moteur)
+      width: 1024
+      height: 1024
+      supports_negative: false
+      edit: optional      # édition possible AVEC un LoRA d'édition (Ostris Edit)
+      # LoRA d'édition officiel, téléchargeable en 1 clic depuis l'onglet
+      # (bouton du Mode édition). Premier .safetensors du dépôt.
+      edit_lora: ostris/krea2_turbo_style_reference
+    presets:
+      # Aligné sur docs/krea2.md : euler + scheduler = défaut moteur, cfg 1.0.
+      # La doc ne fixe pas de pas ; on garde le 8 pas « officiel » du Turbo distillé.
+      - {name: "⚡ Officiel (8 pas)",   sampler: euler, scheduler: auto, steps: 8,  cfg_scale: 1.0}
+      - {name: "Très rapide (4 pas)",  sampler: euler, scheduler: auto, steps: 4,  cfg_scale: 1.0}
+      - {name: "Qualité (12 pas)",     sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
+    vram_min_gb: 10
+
+  # --------------------------------------------------------------------------
+  - id: krea2-turbo-int8
+    name: "Krea 2 Turbo INT8 ConvRot (expérimental)"
+    family: krea2
+    tags: [expérimental, int8, ampere, benchmark]
+    description: >
+      Variante native **INT8 ConvRot** publiée par Comfy-Org, à comparer au
+      GGUF sur RTX 30xx. Le fichier est plus gros que la VRAM d'une RTX 3060 :
+      l'application garde donc la diffusion en RAM et charge ses couches à la
+      demande avec `--stream-layers`, tout en calculant sur la RTX 3060. Ne
+      remplace pas le GGUF par défaut : utilisez le test A/B des Réglages et
+      gardez celui dont vous préférez réellement les images. Moteur sd.cpp
+      récent requis (support INT8 natif + `--params-backend`). Licence Krea 2.
+    sources:
+      diffusion:
+        repo: Comfy-Org/Krea-2
+        match: "diffusion_models/krea2_turbo_int8_convrot.safetensors"
+      text_encoder:
+        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
+        match: "Qwen3VL-4B-Instruct-{enc_quant}.gguf"
+        quantizable: true
+      text_encoder_vision:
+        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
+        match: "mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf"
+        optional: true
+      vae:
+        repo: Comfy-Org/Wan_2.1_ComfyUI_repackaged
+        match: "*wan_2.1_vae.safetensors"
+    defaults:
+      steps: 8
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: auto
+      width: 1024
+      height: 1024
+      supports_negative: false
+      edit: optional
+      edit_lora: ostris/krea2_turbo_style_reference
+      memory_preset: int8_stream
+    presets:
+      - {name: "⚡ Officiel (8 pas)",  sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0}
+      - {name: "Test A/B (4 pas)",    sampler: euler, scheduler: auto, steps: 4, cfg_scale: 1.0}
+      - {name: "Qualité (12 pas)",    sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
+    vram_min_gb: 12
+
+
+# ============================================================================
+#  Upscalers ESRGAN GGUF — agrandissement SIMPLE, natif sd.cpp (--mode upscale)
+#  Réseaux ESRGAN (2x/4x) : déterministe, 100% GPU, aucun PyTorch ni prompt.
+#  Source : huggingface.co/wbruna/upscalers-sdcpp-gguf
+# ============================================================================
+upscalers:
+  name: "Upscalers ESRGAN (GGUF, sd.cpp)"
+  repo: wbruna/upscalers-sdcpp-gguf
+  files:
+    - 2x-ESRGAN.gguf
+    - 2xPSNR.gguf
+    - 2x_StarSample_V2.0.gguf
+    - 4xLSDIRplusC.gguf
+    - 4xLSDIRplusN.gguf
+    - 4xLSDIRplusR.gguf
+    - 4xNomos2_otf_esrgan.gguf
+    - 4xNomos8kSC.gguf
+    - 4xNomosWebPhoto_esrgan.gguf
+    - 4xUltrasharpV10.gguf
+    - 4x_NickelbackFS_72000_G.gguf
+    - 4x_Nickelback_70000G.gguf
+    - 4x_foolhardy_Remacri.gguf
+    - 4x_foolhardy_Remacri_ExtraSmoother.gguf
+    - RealESRGAN_x4plus.gguf
+    - RealESRGAN_x4plus_anime_6B.gguf
+    - smbss_2x_RRDB_Animation.gguf

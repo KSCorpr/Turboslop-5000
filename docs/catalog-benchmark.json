@@ -1,0 +1,10 @@
+{
+  "scope": "catalogue reads only; not GPU generation",
+  "iterations_per_repeat": 200,
+  "repeats": 3,
+  "median_seconds": {
+    "original_yaml_each_call": 1.5864213430004384,
+    "cached_yaml_with_stat_and_deepcopy": 0.01583460500023648
+  },
+  "ratio": 100.18698559116228
+}

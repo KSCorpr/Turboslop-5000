@@ -1,0 +1,16 @@
+Turboslop 5000 — validation du 6 septembre 2026
+
+Commande : python -m unittest discover -s tests -v
+Ran 424 tests in 13.467s
+
+OK (skipped=1)
+Test ignoré : test_readable_by_psd_tools (dépendance optionnelle absente).
+
+HTTP homepage: 200 branding OK
+UI config: 200 873 components
+SMOKE PASS
+Closing server running on port: 17860
+
+Python : 3.12.13
+Binaires officiels 841 : sd-cli -h et sd-server -h, code de sortie 0.
+Aucune génération CUDA ni validation Windows dans cet environnement.

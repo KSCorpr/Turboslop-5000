@@ -1,0 +1,27 @@
+# Interface web moderne
+# Gradio 6 : thème custom, exécution locale. Le plancher est ferme — la 6.0 a
+# supprimé des paramètres qu'on utilisait (`show_download_button`,
+# `show_copy_button`, `show_api`) et déplacé thème/CSS/head vers launch().
+# Le code n'est plus compatible 5.x, donc pas de fourchette large ici.
+gradio>=6.0,<7
+
+# Bibliothèque de modèles : téléchargement à la demande depuis Hugging Face
+# NB : <1.0 — huggingface_hub 1.0 retire des symboles encore utilisés en amont.
+# hf_transfer n'est volontairement PAS utilisé : sous Windows il provoque des
+# verrous de fichier (os error 32). Téléchargement HTTP standard = fiable.
+huggingface_hub>=0.26,<1.0
+# Accélère les téléchargements des dépôts « Xet » de HF (sinon repli HTTP +
+# avertissement). Paquet Rust avec wheels Windows précompilées.
+hf_xet
+
+# Utilitaires
+PyYAML>=6.0
+Pillow>=10.2
+requests>=2.31
+
+# ---------------------------------------------------------------------------
+# PyTorch n'est PAS listé ici : la génération (Flux.2 Klein) passe par
+# stable-diffusion.cpp (binaire natif, GGUF). PyTorch n'est nécessaire que pour
+# les outils du Toolkit (profondeur, détourage), installés à la demande par
+# `scripts/setup_tools.py` avec la bonne build CUDA.
+# ---------------------------------------------------------------------------

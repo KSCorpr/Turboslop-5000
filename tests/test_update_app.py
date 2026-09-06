@@ -68,7 +68,10 @@ class PlanTests(unittest.TestCase):
         for rel, content in local.items():
             p = root / rel
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(content, encoding="utf-8")
+            # The updater compares bytes. Match the archive's LF bytes on
+            # Windows too; text mode would turn them into CRLF and manufacture
+            # a difference in the fixture marked as identical.
+            p.write_bytes(content.encode("utf-8"))
         return root
 
     def test_only_real_differences_are_written(self):

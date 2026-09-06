@@ -416,10 +416,42 @@ def install_upscale():
           "(onglet Toolkit → Upscale créatif).")
 
 
+def install_spandrel():
+    """Only the optional SR engine and one small baseline model; no diffusion."""
+    ensure_torch_cuda()
+    sh([sys.executable, "-m", "pip", "install", NUMPY_PIN,
+        "spandrel>=0.4,<0.5", "pillow"])
+    base = settings.ROOT / "tools_repo" / "spandrel"
+    base.mkdir(parents=True, exist_ok=True)
+    dest = base / "RealESRGAN_x4plus.pth"
+    # Official author's release, downloaded atomically and validated before use.
+    if not dest.is_file():
+        import urllib.request
+        import uuid
+        part = base / f"{uuid.uuid4().hex}.part"
+        try:
+            url = ("https://github.com/xinntao/Real-ESRGAN/releases/download/"
+                   "v0.1.0/RealESRGAN_x4plus.pth")
+            with urllib.request.urlopen(url, timeout=120) as response, part.open("wb") as out:
+                shutil.copyfileobj(response, out)
+            import torch
+            torch.load(part, map_location="cpu", weights_only=True)
+            part.replace(dest)
+        finally:
+            part.unlink(missing_ok=True)
+    from spandrel import ModelLoader
+    model = ModelLoader().load_from_file(dest)
+    if model.scale != 4:
+        raise RuntimeError("Unexpected model scale")
+    pin_numpy()
+    print("Spandrel x4 installed. Import DAT/HAT x4 weights from the Toolkit "
+          "to compare them with RealESRGAN.")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("tool", choices=["depth", "bg", "sam", "clip", "enhance",
-                                     "describe", "face", "upscale"])
+                                     "describe", "face", "upscale", "spandrel"])
     args = ap.parse_args()
     settings.configure_hf_env()
     if args.tool == "depth":
@@ -438,6 +470,8 @@ def main():
         install_face()
     elif args.tool == "upscale":
         install_upscale()
+    elif args.tool == "spandrel":
+        install_spandrel()
 
 
 if __name__ == "__main__":

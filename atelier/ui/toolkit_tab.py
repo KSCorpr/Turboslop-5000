@@ -432,23 +432,13 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
             # ---------- Agrandir (ESRGAN, sd.cpp) ----------
             with gr.Tab("🔼 Upscale", id="esrgan"):
                 gr.Markdown(
-                    "**Plain** enlargement by an ESRGAN network, native to "
-                    "**sd.cpp**: deterministic, **100% GPU**, no PyTorch and "
-                    "no prompt. The factor (×2 or ×4) comes from the model "
-                    "you pick; “Repeat” applies the model a second time (×2 "
-                    "twice = ×4).\n\n🎨 **Comics, illustration, line art**: "
-                    "pick a model marked **drawing / anime**. Photo models "
-                    "(Remacri, Nomos, UltraSharp…) are trained on natural "
-                    "textures: on a flat colour area they invent grain, and "
-                    "along a crisp line they lay down a halo. That is what "
-                    "“horrible interpolation” looks like.\n\n📥 **Adding your "
-                    "own models**: drop a `.pth`, `.safetensors` or `.gguf` "
-                    "file into the upscalers folder, then “↻ Refresh”. sd.cpp "
-                    "reads most `.pth` files directly — so the whole "
-                    "[OpenModelDB](https://openmodeldb.info) catalog is "
-                    "usable; filter it on *anime* / *manga* / *cartoon*. GGUF "
-                    "loads faster and avoids executing a pickle, but it is "
-                    "not required.")
+                    "**Native ESRGAN enlargement**, without PyTorch or a prompt. "
+                    "For ×4, select a native ×4 model and one pass. "
+                    "Transparency and embedded ICC profiles are preserved. "
+                    "The output dimensions are checked before saving.\n\n"
+                    "Custom `.gguf`, `.pth` and `.safetensors` files must use an "
+                    "ESRGAN architecture supported by sd.cpp. For DAT/HAT and "
+                    "other architectures, use **×4 Faithful**.")
 
                 with gr.Accordion("⬇️ Download the upscalers (1 click)",
                                   open=not registry.upscalers_ready()):
@@ -464,7 +454,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 with gr.Row():
                     with gr.Column(scale=3):
                         u_image = gr.Image(
-                            label="Image to upscale", type="pil",
+                            label="Image to upscale", type="filepath", image_mode=None,
                             buttons=widgets.IMAGE_VIEW_ONLY)
                         u_model = gr.Dropdown(
                             registry.upscaler_choices(),
@@ -477,12 +467,9 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         u_repeats = gr.Radio(
                             [("×1 (natif)", 1), ("Repeat ×2", 2)],
                             value=1, label="Repeat",
-                            info="⚠️ Repeating runs the network on its OWN "
-                                 "output: it mistakes the high frequencies it "
-                                 "just invented for real detail and "
-                                 "re-emphasizes them. That is what produces "
-                                 "the staircase on diagonals. A ×4 model "
-                                 "always beats a repeated ×2.")
+                            info="One pass with a ×4 model is recommended. "
+                                 "Repeating a ×4 model produces ×16 and may "
+                                 "amplify artifacts.")
                         with gr.Row():
                             u_refresh = gr.Button("↻ Refresh list", size="sm")
                             u_run = gr.Button("🔼 Upscale", variant="primary",
@@ -538,6 +525,65 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                     outputs=[u_result, u_log])
                 widgets.stop_into_log(u_stop, gen_engine.cancel, u_log,
                                       [u_evt])
+
+            with gr.Tab("×4 Faithful", id="spandrel"):
+                gr.Markdown(
+                    "**Exact ×4 enlargement, without a prompt.** Overlapping tiles "
+                    "limit GPU memory use. Transparency and embedded ICC profiles "
+                    "are preserved. The result depends on the selected model; "
+                    "inspect fine text and textures at full size.\n\n"
+                    "Install the optional engine and RealESRGAN baseline once. "
+                    "You can then import native ×4 RGB DAT/HAT/RealPLKSR models "
+                    "from [OpenModelDB](https://openmodeldb.info), including "
+                    "[4xNomos8kDAT](https://openmodeldb.info/models/4x-Nomos8kDAT). "
+                    "Downloaded models work offline.")
+                sp_install = gr.Button("Install Spandrel + RealESRGAN ×4")
+                sp_install_log = gr.Textbox(label="Installation log", lines=5)
+                sp_install.click(tools.install_spandrel_stream, outputs=sp_install_log)
+                with gr.Row():
+                    with gr.Column():
+                        sp_image = gr.Image(label="Source image", type="filepath",
+                                            image_mode=None, buttons=widgets.IMAGE_VIEW_ONLY)
+                        sp_model = gr.Dropdown(tools.spandrel_models(),
+                                               label="Native ×4 model")
+                        sp_upload = gr.File(label="Import model (.pth / .safetensors)",
+                                            file_types=[".pth", ".safetensors"], type="filepath")
+                        sp_refresh = gr.Button("Refresh models")
+                        sp_fp32 = gr.Checkbox(label="Full precision (more GPU memory)",
+                                              value=False)
+                        sp_run = gr.Button("Upscale ×4", variant="primary")
+                        sp_stop = gr.Button("Cancel", variant="stop")
+                    with gr.Column():
+                        sp_result = gr.Image(label="Result — exact ×4", format="png",
+                                             buttons=widgets.IMAGE_BUTTONS)
+                        sp_log = gr.Textbox(label="Log", lines=10)
+
+                def sp_refresh_models():
+                    models = tools.spandrel_models()
+                    return gr.update(choices=models, value=models[0] if models else None)
+
+                def sp_import(path):
+                    if path:
+                        name = tools.import_spandrel_model(path)
+                        return gr.update(choices=tools.spandrel_models(), value=name)
+                    return gr.update()
+
+                def sp_upscale(image, model, full_precision):
+                    if image is None or not model:
+                        raise gr.Error("Provide an image and select a model.")
+                    logs = []
+                    try:
+                        output = tools.spandrel_upscale(image, model, full_precision,
+                                                       log=logs.append)
+                        return str(output), "\n".join(logs)
+                    except Exception as exc:
+                        return None, "\n".join(logs + [f"ERROR: {exc}"])
+
+                sp_refresh.click(sp_refresh_models, outputs=sp_model)
+                sp_upload.upload(sp_import, inputs=sp_upload, outputs=sp_model)
+                sp_event = sp_run.click(sp_upscale, inputs=[sp_image, sp_model, sp_fp32],
+                                         outputs=[sp_result, sp_log])
+                widgets.stop_into_log(sp_stop, tools.cancel, sp_log, [sp_event])
 
             # ---------- Décomposition en calques (PSD) ----------------------
             with gr.Tab("🧩 Layers", id="layers"):
@@ -903,7 +949,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        hr_image = gr.Image(label="Image to upscale", type="pil",
+                        hr_image = gr.Image(label="Image to upscale", type="filepath", image_mode=None,
                                             buttons=widgets.IMAGE_VIEW_ONLY)
                         hr_model = gr.Dropdown(
                             choices=_hr_models,
@@ -1005,7 +1051,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                  "(4.8 GB for a 7B).")
                         seed_res = gr.Slider(
                             1024, 4096, value=2048, step=64,
-                            label="Target resolution (short side)",
+                            label="Maximum output edge (pixels)",
                             info="Start at 2048 px; 4K takes considerably longer.")
                         seed_offload = gr.Radio(
                             [("GTX 1080 Ti (recommended for this PC)", "secondary"),
@@ -1269,7 +1315,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 with gr.Row():
                     with gr.Column(scale=3):
                         c_image = gr.Image(
-                            label="Image to upscale", type="pil",
+                            label="Image to upscale", type="filepath", image_mode=None,
                             buttons=widgets.IMAGE_VIEW_ONLY)
                         _ckpts = tools.list_upscale_checkpoints()
                         c_model = gr.Dropdown(

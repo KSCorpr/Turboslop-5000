@@ -2060,3 +2060,32 @@ authors. Please read and respect each model's own license on its page.
 This is an independent, non-commercial hobby project, **not affiliated with or
 endorsed by** any of the above. If you are an author and want a credit corrected
 or removed, please open an issue.
+
+
+### Reliable ×4 enlargement (Turboslop 5000)
+
+- **Toolkit → Upscale** keeps native sd.cpp ESRGAN. Choose a ×4 model and one
+  pass for ×4. Output dimensions are validated; only a confirmed GPU memory
+  error triggers smaller tiles. Temporary files are isolated per job.
+- **Toolkit → ×4 Faithful** installs optional Spandrel/PyTorch and the official
+  RealESRGAN_x4plus baseline. Click **Refresh models** after installation.
+  Import native ×4 RGB `.pth` / `.safetensors` weights for DAT, HAT, RealPLKSR,
+  or other architectures supported by Spandrel. These models do not run in
+  sd.cpp simply because their file extension is accepted.
+- Spandrel uses overlapping, feathered tiles with a context border, CPU
+  assembly, and GPU tile retries without lowering the requested resolution.
+  Half precision is used only on CUDA when the model supports it; a full
+  precision checkbox is available. No prompt or diffusion pass is involved.
+- Original file uploads preserve alpha and embedded RGB ICC profiles. Alpha
+  is enlarged separately with Lanczos; it is not reconstructed by the RGB
+  network. Output is 8-bit PNG. EXIF orientation is applied before enlargement.
+- Model choice still matters: compare full-size crops of text, faces, diagonal
+  edges and flat colours. No neural model guarantees recovery of true missing
+  detail. 4xNomos8kDAT by Helaman is an optional photo candidate (CC-BY-4.0):
+  https://openmodeldb.info/models/4x-Nomos8kDAT .
+- SeedVR2's existing resolution control is now accurately labelled as the
+  maximum output edge. It is separate from the exact ×4 workflow.
+
+Validation: pixel/metadata tests and native error-handling tests run without a
+GPU. Actual Spandrel model inference, Windows CUDA installation, VRAM usage and
+visual quality require validation on the target PC; no GPU speedup is claimed.

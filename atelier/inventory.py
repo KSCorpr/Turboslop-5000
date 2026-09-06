@@ -156,6 +156,9 @@ def items(prefs: dict | None = None) -> list[Item]:
              [tools.FACE_MODEL_DIR], note="Reinstallable in one click."),
         Item("tool_upscale", "Toolkit — Creative SDXL upscale", "Toolkit add-ons",
              [tools.UPSCALE_DIR], note="Includes ControlNet and custom checkpoints."),
+        Item("tool_spandrel", "Toolkit — Spandrel ×4 models", "Toolkit add-ons",
+             [tools.SPANDREL_DIR], note="Includes imported custom models.",
+             protected=True),
         Item("tool_seedvr2", "Toolkit — SeedVR2 restoration", "Toolkit add-ons",
              [tools.SEEDVR2_DIR], note="An isolated Python + the Q8/Q4 models."),
     ]

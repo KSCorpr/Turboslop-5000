@@ -420,79 +420,65 @@ def generate(
 
 def upscale_image(image, model_name: str, repeats: int = 1,
                   log: Callable[[str], None] | None = None) -> Path:
-    """Agrandissement SIMPLE via un upscaler ESRGAN GGUF (sd.cpp --mode upscale).
-
-    Déterministe, 100% GPU, aucun prompt. `repeats` ré-applique le modèle (un
-    modèle ×2 appliqué 2 fois = ×4).
-
-    La taille de tuile du réseau est choisie ici, pas laissée au défaut de
-    sd.cpp (128 px) : voir `sdcpp.upscale_tile_size`. Si la tuile élargie ne
-    passe pas en VRAM, on relance une fois au défaut plutôt que de rendre une
-    erreur — l'image sortira comme avant, pas mieux, mais elle sortira.
-    """
+    """Native ESRGAN with strict scale checks and OOM-only tile retries."""
+    import tempfile
+    import uuid
     from PIL import Image
+    from ..imaging.upscale import read_source, save_result
+    from . import release_resident_engine
+
+    repeats = int(repeats)
+    if repeats not in (1, 2):
+        raise sdcpp.EngineError("Repeat must be 1 or 2.")
     prefs = settings.load_prefs()
     sd_cli = settings.find_sd_cli()
     if sd_cli is None:
-        raise sdcpp.EngineError(
-            "The sd-cli binary was not found. Run the installation (install.bat).")
+        raise sdcpp.EngineError("The sd-cli binary was not found. Run install.bat.")
     model = registry.upscaler_path(model_name)
     if model is None:
-        raise sdcpp.EngineError(
-            f"Upscaler not found: “{model_name}”. Download the upscalers "
-            "from the Toolkit → Enlarge tab.")
-
+        raise sdcpp.EngineError("Upscaler not found. Download it from Toolkit → Upscale.")
+    factor = registry.upscaler_factor(model_name, default=0)
+    if not factor:
+        raise sdcpp.EngineError("Native model filename must contain its scale (2x, 4x…).")
+    source = read_source(image)
+    w, h = source.size
+    expected = (w * factor ** repeats, h * factor ** repeats)
     settings.ensure_dirs()
-    src = settings.TMP_DIR / "upscale_in.png"
-    im = Image.open(image).convert("RGB") if isinstance(image, (str, Path)) \
-        else image.convert("RGB")
-    im.save(src)
-    w, h = im.size
-
     _, gpu_index = _resolved_flags(prefs)
+    release_resident_engine("upscale needs GPU memory", log)
     prof = hardware.auto_profile(prefs.get("gpu_index"))
-    vram = prof.gpu.vram_gb if prof.gpu else None
+    free = hardware.free_vram_gb(prof.gpu.index if prof.gpu else None)
+    vram = free if free > 0 else (prof.gpu.vram_gb if prof.gpu else None)
     tile = sdcpp.upscale_tile_size(w, h, vram)
-    out = sdcpp.unique_output("upscale")
+    output = settings.OUTPUT_DIR / f"upscale-{uuid.uuid4().hex}.png"
     if log:
-        log(f"Upscale ESRGAN « {model_name} » (×{repeats or 1}) on the GPU…")
-        if "--upscale-tile-size" in sdcpp.supported_options(sd_cli):
-            log(f"[esrgan] tiles of {tile} px"
-                + (" — the whole image in one pass, no seam."
-                   if tile >= max(w, h) else
-                   f" (instead of {sdcpp.SDCPP_DEFAULT_UPSCALE_TILE} px:"
-                   " fewer seams and less aliasing)."))
-        else:
-            log("[esrgan] sd-cli too old for --upscale-tile-size: tiles of "
-                f"{sdcpp.SDCPP_DEFAULT_UPSCALE_TILE} px (seams possible). "
-                "Update the engine (update-engine.bat).")
-
-    def _cmd(tile_px: int) -> list[str]:
-        return sdcpp.build_upscale_cmd(sd_cli, src, model, out,
-                                       repeats=int(repeats or 1),
-                                       tile_size=tile_px)
-
-    # Les commandes sont construites AVANT le try : une erreur de construction
-    # (fichier manquant) n'a rien à voir avec la VRAM et ne doit pas déclencher
-    # une seconde tentative sous un message trompeur.
-    first, fallback = _cmd(tile), _cmd(sdcpp.SDCPP_DEFAULT_UPSCALE_TILE)
-    try:
-        sdcpp.run(first, log=log, gpu_index=gpu_index)
-    except sdcpp.EngineError:
-        # Annulation utilisateur : ne surtout pas relancer.
-        if sdcpp.was_cancelled() or first == fallback:
-            raise
-        if log:
-            log(f"[esrgan] failed with tiles of {tile} px (VRAM ?) → "
-                f"retrying at the sd.cpp default "
-                f"({sdcpp.SDCPP_DEFAULT_UPSCALE_TILE} px).")
-        sdcpp.run(fallback, log=log, gpu_index=gpu_index)
-    if out.is_file():
-        return out
-    found = sorted(out.parent.glob(f"{out.stem}*{out.suffix}"))
-    if found:
-        return found[0]
-    raise sdcpp.EngineError("The upscale produced no image.")
+        log(f"ESRGAN {model_name}: {w}×{h} → {expected[0]}×{expected[1]}")
+    with tempfile.TemporaryDirectory(prefix="upscale-", dir=settings.TMP_DIR) as job:
+        src, out = Path(job) / "input.png", Path(job) / "output.png"
+        source.convert("RGB").save(src)
+        while True:
+            cmd = sdcpp.build_upscale_cmd(sd_cli, src, model, out,
+                                          repeats=repeats, tile_size=tile)
+            try:
+                sdcpp.run(cmd, log=log, gpu_index=gpu_index)
+                break
+            except sdcpp.VramError:
+                if (sdcpp.was_cancelled() or tile <= 128 or
+                        "--upscale-tile-size" not in sdcpp.supported_options(sd_cli)):
+                    raise
+                tile = max(128, (tile // 2 // 32) * 32)
+                for partial in Path(job).glob("output*.png"):
+                    partial.unlink()
+                if log:
+                    log(f"GPU memory exhausted; retrying with {tile}px tiles.")
+        found = [out] if out.is_file() else sorted(Path(job).glob("output*.png"))
+        if len(found) != 1:
+            raise sdcpp.EngineError("The upscale did not produce one output image.")
+        try:
+            with Image.open(found[0]) as result:
+                return save_result(result, source, output, expected)
+        except ValueError as exc:
+            raise sdcpp.EngineError(str(exc)) from exc
 
 
 # Alignement des tailles de la passe HD.

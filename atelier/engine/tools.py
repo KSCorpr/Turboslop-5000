@@ -813,6 +813,62 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
     return _collect(out_dir, "usdu", stamp)
 
 
+SPANDREL_DIR = TOOLS_DIR / "spandrel"
+
+
+def spandrel_models():
+    return sorted(p.name for p in SPANDREL_DIR.glob("*")
+                  if p.suffix.lower() in {".pth", ".safetensors"})
+
+
+def install_spandrel_stream():
+    yield from _install_stream("spandrel")
+
+
+def import_spandrel_model(path):
+    import shutil
+    import uuid
+    source = Path(path)
+    if source.suffix.lower() not in {".pth", ".safetensors"}:
+        raise ToolError("Choose a .pth or .safetensors model.")
+    SPANDREL_DIR.mkdir(parents=True, exist_ok=True)
+    dest = SPANDREL_DIR / source.name
+    partial = SPANDREL_DIR / f"{uuid.uuid4().hex}.part"
+    try:
+        shutil.copyfile(source, partial)
+        partial.replace(dest)
+    finally:
+        partial.unlink(missing_ok=True)
+    return dest.name
+
+
+def spandrel_upscale(image, model_name, full_precision=False, log=None):
+    import tempfile
+    import uuid
+    from ..imaging.upscale import read_source
+    if model_name not in spandrel_models():
+        raise ToolError("Install or import a native x4 model first.")
+    settings.ensure_dirs()
+    output = settings.OUTPUT_DIR / f"upscale4x-{uuid.uuid4().hex}.png"
+    runner = settings.ROOT / "scripts" / "tools" / "run_spandrel.py"
+    with tempfile.TemporaryDirectory(prefix="spandrel-", dir=settings.TMP_DIR) as job:
+        src = Path(job) / "input.png"
+        source = read_source(image)
+        source.save(src, icc_profile=source.info.get("icc_profile"))
+        cmd = [sys.executable, str(runner), "--input", str(src),
+               "--output", str(output), "--model", str(SPANDREL_DIR / model_name)]
+        if full_precision:
+            cmd.append("--full-precision")
+        _run_tool(cmd, log, "Spandrel failed. See the log; install the optional "
+                  "engine first. For invalid pixels, enable full precision.",
+                  gpu_index=_gen_gpu_index())
+    with Image.open(output) as result:
+        if result.size != (source.width*4, source.height*4):
+            output.unlink(missing_ok=True)
+            raise ToolError("Invalid x4 output dimensions.")
+    return output
+
+
 def seedvr2_upscale(image, resolution: int = 2048,
                     model: str = "seedvr2_ema_3b-Q8_0.gguf",
                     blocks_to_swap: int = 16, tile: int = 1024,

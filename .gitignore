@@ -1,0 +1,32 @@
+# Modèles, binaires, dépôts clonés (volumineux)
+models/
+loras/
+bin/
+.engine-previous/
+.engine-broken/
+.engine-swap/
+.engine-stage-*/
+vendor/
+tools_repo/
+
+# Environnement portable
+python/
+venv/
+.venv/
+runtime/
+
+# Données utilisateur & sorties
+userdata/
+outputs/
+tmp/
+hf_cache/
+.cache/
+
+# Caches Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Divers
+*.log
+.DS_Store
